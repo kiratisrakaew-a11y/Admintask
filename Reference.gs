@@ -1,7 +1,7 @@
 /**
  * Reads LIST once and rebuilds the generated reference sheets in batch.
  * @param {SpreadsheetApp.Spreadsheet} spreadsheet
- * @return {{companyCount: number, departmentCount: number, totalReferenceCount: number, sourceRowsScanned: number, companyMap: Object<string, string>, departmentMap: Object<string, string>}}
+ * @return {{companyCount: number, departmentCount: number, sourceRowsScanned: number}}
  */
 function refreshReferenceSheets_(spreadsheet) {
   const referenceData = readReferenceData_(spreadsheet);
@@ -22,17 +22,14 @@ function refreshReferenceSheets_(spreadsheet) {
   return {
     companyCount: referenceData.companyRows.length,
     departmentCount: referenceData.departmentRows.length,
-    totalReferenceCount: referenceData.companyRows.length + referenceData.departmentRows.length,
-    sourceRowsScanned: referenceData.sourceRowsScanned,
-    companyMap: referenceData.companyMap,
-    departmentMap: referenceData.departmentMap
+    sourceRowsScanned: referenceData.sourceRowsScanned
   };
 }
 
 /**
  * Reads company and department lookup values from the LIST sheet.
  * @param {SpreadsheetApp.Spreadsheet} spreadsheet
- * @return {{companyRows: Array<Array<string>>, departmentRows: Array<Array<string>>, companyMap: Object<string, string>, departmentMap: Object<string, string>, sourceRowsScanned: number}}
+ * @return {{companyRows: Array<Array<string>>, departmentRows: Array<Array<string>>, sourceRowsScanned: number}}
  */
 function readReferenceData_(spreadsheet) {
   const listSheet = spreadsheet.getSheetByName(COLUMN_MAPPING.REFERENCE_SHEET);
@@ -49,15 +46,13 @@ function readReferenceData_(spreadsheet) {
   return {
     companyRows: companyRows,
     departmentRows: departmentRows,
-    companyMap: buildReferenceMap_(companyRows),
-    departmentMap: buildReferenceMap_(departmentRows),
     sourceRowsScanned: Math.max(0, values.length - 1)
   };
 }
 
 /**
  * Extracts lookup rows from a bulk getValues result using configured source columns.
- * Rows with a blank lookup code are ignored, even if the display name is populated.
+ * Rows with both lookup fields blank are ignored.
  * @param {Array<Array<*>>} values
  * @param {{startRow: number, sourceColumns: Object<string, string>}} mapping
  * @param {string[]} fields
@@ -75,25 +70,12 @@ function extractReferenceRows_(values, mapping, fields) {
       return normalizeReferenceValue_(row[sourceIndex]);
     });
 
-    if (outputRow[0] !== '') {
+    if (outputRow.some(function(value) { return value !== ''; })) {
       rows.push(outputRow);
     }
   });
 
   return rows;
-}
-
-
-/**
- * Builds a lookup map keyed by code for downstream transformations.
- * @param {Array<Array<string>>} rows
- * @return {Object<string, string>}
- */
-function buildReferenceMap_(rows) {
-  return rows.reduce(function(map, row) {
-    map[row[0]] = row[1] || '';
-    return map;
-  }, {});
 }
 
 /**
@@ -111,6 +93,18 @@ function writeReferenceTable_(spreadsheet, sheetName, headers, rows) {
 
   sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
 }
+
+/**
+ * Converts an A1 column letter to a zero-based array index.
+ * @param {string} columnLetter
+ * @return {number}
+ */
+function columnLetterToIndex_(columnLetter) {
+  return columnLetter.split('').reduce(function(total, letter) {
+    return (total * 26) + letter.toUpperCase().charCodeAt(0) - 64;
+  }, 0) - 1;
+}
+
 /**
  * @param {*} value
  * @return {string}

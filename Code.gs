@@ -12,7 +12,8 @@ function onOpen() {
 }
 
 /**
- * Refreshes the full procurement master pipeline from raw sheets into generated outputs.
+ * Milestone 1 scaffold for master refresh.
+ * Later milestones will replace this with extraction, transformation, validation, and analytics refresh logic.
  */
 function refreshProcurementMaster() {
   const lock = LockService.getDocumentLock();
@@ -21,37 +22,18 @@ function refreshProcurementMaster() {
   try {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const batchId = createLoadBatchId_();
-    const referenceResult = refreshReferenceSheets_(spreadsheet);
-    const extractionResult = extractSourceRows_(spreadsheet);
-    const masterRows = transformToMasterRows_(extractionResult.records, referenceResult, batchId);
-    const validationResult = validateMasterRows_(masterRows);
-    const analyticsRows = buildAdminWorkloadAnalytics_(validationResult.masterRows);
 
-    writeTable_(spreadsheet, PROCUREMENT_CONFIG.SHEETS.MASTER, PROCUREMENT_CONFIG.MASTER_HEADERS, objectsToRows_(validationResult.masterRows, PROCUREMENT_CONFIG.MASTER_HEADERS));
-    writeTable_(spreadsheet, PROCUREMENT_CONFIG.SHEETS.ANALYTICS, PROCUREMENT_CONFIG.ANALYTICS_HEADERS, objectsToRows_(analyticsRows, PROCUREMENT_CONFIG.ANALYTICS_HEADERS));
-    writeTable_(spreadsheet, PROCUREMENT_CONFIG.SHEETS.DATA_QUALITY, PROCUREMENT_CONFIG.DATA_QUALITY_HEADERS, objectsToRows_(validationResult.issues, PROCUREMENT_CONFIG.DATA_QUALITY_HEADERS));
+    createAllGeneratedSheetHeaders_(spreadsheet);
     writeSourceMappingSheet_(spreadsheet);
-
-    appendRunLog_(
-      spreadsheet,
-      batchId,
-      'refreshProcurementMaster',
-      extractionResult.errors.length ? 'warning' : 'success',
-      buildRefreshSummaryMessage_(referenceResult, extractionResult, validationResult, analyticsRows),
-      {
-        sourceRowCount: extractionResult.records.length,
-        masterRowCount: validationResult.masterRows.length,
-        analyticsRowCount: analyticsRows.length,
-        dataQualityIssueCount: validationResult.issues.length
-      }
-    );
+    appendRunLog_(spreadsheet, batchId, 'refreshProcurementMaster', 'scaffold_complete', 'Milestone 1 generated sheet headers created; no raw sheets were modified.');
   } finally {
     lock.releaseLock();
   }
 }
 
 /**
- * Milestone 2: reads LIST and rebuilds reference lookup sheets.
+ * Milestone 1 scaffold for reference refresh.
+ * Later milestones will populate reference rows from the LIST sheet.
  */
 function refreshReferences() {
   const lock = LockService.getDocumentLock();
@@ -60,17 +42,10 @@ function refreshReferences() {
   try {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const batchId = createLoadBatchId_();
-    const counts = refreshReferenceSheets_(spreadsheet);
 
-    appendRunLog_(
-      spreadsheet,
-      batchId,
-      'refreshReferences',
-      'success',
-      'REF_COMPANY: ' + counts.companyCount + ' rows, REF_DEPARTMENT: ' +
-        counts.departmentCount + ' rows, LIST rows scanned: ' + counts.sourceRowsScanned + '.',
-      {sourceRowCount: counts.totalReferenceCount}
-    );
+    ensureGeneratedSheet_(spreadsheet, PROCUREMENT_CONFIG.SHEETS.REF_COMPANY, PROCUREMENT_CONFIG.REF_COMPANY_HEADERS);
+    ensureGeneratedSheet_(spreadsheet, PROCUREMENT_CONFIG.SHEETS.REF_DEPARTMENT, PROCUREMENT_CONFIG.REF_DEPARTMENT_HEADERS);
+    appendRunLog_(spreadsheet, batchId, 'refreshReferences', 'scaffold_complete', 'Milestone 1 reference headers created; LIST import will be added in Milestone 2.');
   } finally {
     lock.releaseLock();
   }
@@ -144,38 +119,6 @@ function getGeneratedSheetDefinitions_() {
   ];
 }
 
-
-/**
- * Rebuilds a generated table with headers and data rows using batch writes.
- * @param {SpreadsheetApp.Spreadsheet} spreadsheet
- * @param {string} sheetName
- * @param {string[]} headers
- * @param {Array<Array<*>>} rows
- * @return {SpreadsheetApp.Sheet}
- */
-function writeTable_(spreadsheet, sheetName, headers, rows) {
-  const sheet = ensureGeneratedSheet_(spreadsheet, sheetName, headers);
-  if (rows.length > 0) {
-    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-  }
-  return sheet;
-}
-
-/**
- * @param {Object} referenceResult
- * @param {Object} extractionResult
- * @param {Object} validationResult
- * @param {Array<Object>} analyticsRows
- * @return {string}
- */
-function buildRefreshSummaryMessage_(referenceResult, extractionResult, validationResult, analyticsRows) {
-  const sheetCounts = Object.keys(extractionResult.sheetCounts).map(function(sheetName) {
-    return sheetName + ': ' + extractionResult.sheetCounts[sheetName];
-  }).join(', ');
-  const errors = extractionResult.errors.length ? ' Errors: ' + extractionResult.errors.join(' | ') : '';
-  return 'Refresh complete. Company refs: ' + referenceResult.companyCount + ', department refs: ' + referenceResult.departmentCount + ', source rows: ' + extractionResult.records.length + ', master rows: ' + validationResult.masterRows.length + ', analytics rows: ' + analyticsRows.length + ', data quality issues: ' + validationResult.issues.length + '. Source counts: ' + sheetCounts + '.' + errors;
-}
-
 /**
  * Creates or clears a generated sheet and writes exactly one header row.
  * @param {SpreadsheetApp.Spreadsheet} spreadsheet
@@ -230,9 +173,8 @@ function writeSourceMappingSheet_(spreadsheet) {
  * @param {string} action
  * @param {string} status
  * @param {string} message
- * @param {{sourceRowCount: number, masterRowCount: number, analyticsRowCount: number, dataQualityIssueCount: number}=} counts
  */
-function appendRunLog_(spreadsheet, batchId, action, status, message, counts) {
+function appendRunLog_(spreadsheet, batchId, action, status, message) {
   let sheet = spreadsheet.getSheetByName(PROCUREMENT_CONFIG.SHEETS.RUN_LOG);
   if (!sheet) {
     sheet = ensureGeneratedSheet_(spreadsheet, PROCUREMENT_CONFIG.SHEETS.RUN_LOG, PROCUREMENT_CONFIG.RUN_LOG_HEADERS);
@@ -241,19 +183,8 @@ function appendRunLog_(spreadsheet, batchId, action, status, message, counts) {
     sheet.setFrozenRows(1);
   }
 
-  const runCounts = counts || {};
   const now = Utilities.formatDate(new Date(), PROCUREMENT_CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
-  sheet.appendRow([
-    now,
-    batchId,
-    action,
-    status,
-    runCounts.sourceRowCount || 0,
-    runCounts.masterRowCount || 0,
-    runCounts.analyticsRowCount || 0,
-    runCounts.dataQualityIssueCount || 0,
-    message
-  ]);
+  sheet.appendRow([now, batchId, action, status, 0, 0, 0, 0, message]);
   console.log(action + ': ' + status + ' - ' + message);
 }
 
