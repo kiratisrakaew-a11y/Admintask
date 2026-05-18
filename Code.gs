@@ -24,23 +24,16 @@ function refreshProcurementMaster() {
     const batchId = createLoadBatchId_();
 
     createAllGeneratedSheetHeaders_(spreadsheet);
-    const referenceResult = refreshReferenceSheets_(spreadsheet);
     writeSourceMappingSheet_(spreadsheet);
-    appendRunLog_(
-      spreadsheet,
-      batchId,
-      'refreshProcurementMaster',
-      'references_refreshed',
-      'Generated sheet headers created and reference sheets refreshed; no raw sheets were modified. Company refs: ' + referenceResult.companyCount + ', department refs: ' + referenceResult.departmentCount + '.',
-      {sourceRowCount: referenceResult.sourceRowsScanned}
-    );
+    appendRunLog_(spreadsheet, batchId, 'refreshProcurementMaster', 'scaffold_complete', 'Milestone 1 generated sheet headers created; no raw sheets were modified.');
   } finally {
     lock.releaseLock();
   }
 }
 
 /**
- * Refreshes company and department reference sheets from the LIST source sheet.
+ * Milestone 1 scaffold for reference refresh.
+ * Later milestones will populate reference rows from the LIST sheet.
  */
 function refreshReferences() {
   const lock = LockService.getDocumentLock();
@@ -49,16 +42,10 @@ function refreshReferences() {
   try {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const batchId = createLoadBatchId_();
-    const referenceResult = refreshReferenceSheets_(spreadsheet);
 
-    appendRunLog_(
-      spreadsheet,
-      batchId,
-      'refreshReferences',
-      'success',
-      'Reference sheets refreshed from LIST. Company refs: ' + referenceResult.companyCount + ', department refs: ' + referenceResult.departmentCount + '.',
-      {sourceRowCount: referenceResult.sourceRowsScanned}
-    );
+    ensureGeneratedSheet_(spreadsheet, PROCUREMENT_CONFIG.SHEETS.REF_COMPANY, PROCUREMENT_CONFIG.REF_COMPANY_HEADERS);
+    ensureGeneratedSheet_(spreadsheet, PROCUREMENT_CONFIG.SHEETS.REF_DEPARTMENT, PROCUREMENT_CONFIG.REF_DEPARTMENT_HEADERS);
+    appendRunLog_(spreadsheet, batchId, 'refreshReferences', 'scaffold_complete', 'Milestone 1 reference headers created; LIST import will be added in Milestone 2.');
   } finally {
     lock.releaseLock();
   }
@@ -186,9 +173,8 @@ function writeSourceMappingSheet_(spreadsheet) {
  * @param {string} action
  * @param {string} status
  * @param {string} message
- * @param {{sourceRowCount: number, masterRowCount: number, analyticsRowCount: number, dataQualityIssueCount: number}=} counts
  */
-function appendRunLog_(spreadsheet, batchId, action, status, message, counts) {
+function appendRunLog_(spreadsheet, batchId, action, status, message) {
   let sheet = spreadsheet.getSheetByName(PROCUREMENT_CONFIG.SHEETS.RUN_LOG);
   if (!sheet) {
     sheet = ensureGeneratedSheet_(spreadsheet, PROCUREMENT_CONFIG.SHEETS.RUN_LOG, PROCUREMENT_CONFIG.RUN_LOG_HEADERS);
@@ -197,19 +183,8 @@ function appendRunLog_(spreadsheet, batchId, action, status, message, counts) {
     sheet.setFrozenRows(1);
   }
 
-  const runCounts = counts || {};
   const now = Utilities.formatDate(new Date(), PROCUREMENT_CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm:ss');
-  sheet.appendRow([
-    now,
-    batchId,
-    action,
-    status,
-    runCounts.sourceRowCount || 0,
-    runCounts.masterRowCount || 0,
-    runCounts.analyticsRowCount || 0,
-    runCounts.dataQualityIssueCount || 0,
-    message
-  ]);
+  sheet.appendRow([now, batchId, action, status, 0, 0, 0, 0, message]);
   console.log(action + ': ' + status + ' - ' + message);
 }
 
