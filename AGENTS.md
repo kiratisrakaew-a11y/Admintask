@@ -114,6 +114,19 @@ Most transaction sheets use multi-row headers.
 
 Rows should be imported only when the row has meaningful data, not just a sequence number or default unchecked checkboxes.
 
+### 3.3 Verified workbook cautions from `Y2026.xlsx`
+
+The workbook structure was re-checked against this document. The sheet list, data start rows, and source-specific mappings are broadly consistent, but implementation must account for these observed issues:
+
+1. The repository may contain only `Y2026.xlsx`, even when the business source is called `Y2026.xlsm`; treat them as the same source when the sheet structure matches.
+2. Worksheet dimensions can be much larger than the real transaction area because of formatting or template rows. For example, several transaction sheets extend to rows in the thousands even though meaningful rows end earlier. Extraction must stop/skip by row content, not by worksheet dimension alone.
+3. `FORM` contains default sequence numbers and unchecked checkbox-style values, but no real transaction rows. It must remain ignored and must not be imported as source data.
+4. `Suwanna (Care)` may report a used range through column `AF`, but observed mapped content ends at `AE`; do not add an `AF` mapping for this sheet unless future workbook content proves it is meaningful.
+5. `Athicha (Ruangkhaw) ` may report a used range through column `AE`, but the observed exception mapping ends at `AD`; keep `AB` as receiver, `AC` as RO received date, and `AD` as remark.
+6. Multi-row headers can be misleading when read one row at a time. For example, some top-level labels do not directly name the field in that column. Trust the configured column positions in `COLUMN_MAPPING` rather than inferring mappings from one header row.
+7. `Special License 2026` has both `Y` and `Z` labelled as submit time. Map `Y` to `submit_time`; preserve non-blank `Z` values in `validation_message` when they differ from `Y`.
+8. Raw date/time values have been observed as Excel serial numbers, text dates such as `31/01.2025`, dotted dates such as `06.01.26`, compact contract periods such as `010126-311228`, ranges such as `01/01/2026-31/12/2026`, and ambiguous numeric times such as `18.510000000000002`. Parse defensively and preserve unparsed raw values in validation messages.
+
 ---
 
 ## 4. Generated Sheets Required
